@@ -1,6 +1,8 @@
-﻿name: Deploy UsbShare Endpoints
+name: Deploy UsbShare Endpoints
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
 jobs:
   website:
     runs-on: ubuntu-latest
@@ -23,20 +25,20 @@ jobs:
           SCP="sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=40 -P $PORT"
           ROOT="/home/${USER}/domains/tfastdigital.com/public_html"
           $SSH "$USER@$HOST" "mkdir -p ${ROOT}/api/gsm-usb-server && ls -la ${ROOT} | head"
-          python3 - <<'PY'
-          from pathlib import Path
-          import json
-          cfg={
-            "controlUrl":"http://31.97.99.137:5088",
-            "downloadUrl":"https://tfastdigital.com/Gsm-usb-server",
-            "currentVersion":"2.1.0",
-            "minimumCustomerVersion":"2.1.0",
-            "minimumTechnicianVersion":"2.1.0",
-            "status":"ok",
-            "message":""
-          }
-          Path('/tmp/service-config.json').write_text(json.dumps(cfg,indent=2)+'\n')
-          Path('/tmp/service-config.php').write_text("""<?php
+          python3 <<'PY'
+from pathlib import Path
+import json
+cfg={
+  "controlUrl":"http://31.97.99.137:5088",
+  "downloadUrl":"https://tfastdigital.com/Gsm-usb-server",
+  "currentVersion":"2.1.0",
+  "minimumCustomerVersion":"2.1.0",
+  "minimumTechnicianVersion":"2.1.0",
+  "status":"ok",
+  "message":""
+}
+Path('/tmp/service-config.json').write_text(json.dumps(cfg,indent=2)+'\n')
+Path('/tmp/service-config.php').write_text("""<?php
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Cache-Control: no-store, max-age=0');
@@ -50,15 +52,15 @@ echo json_encode([
   'message' => '',
 ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 """)
-          Path('/tmp/htaccess').write_text("""<IfModule mod_rewrite.c>
+Path('/tmp/htaccess').write_text("""<IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^service-config$ service-config.php [L]
 </IfModule>
 DirectoryIndex service-config.php index.php
 """)
-          print('ok')
-          PY
+print('ok')
+PY
           $SCP /tmp/service-config.json "$USER@$HOST:${ROOT}/gsm-usb-server-service.json"
           $SCP /tmp/service-config.json "$USER@$HOST:${ROOT}/api/gsm-usb-server/service-config.json"
           $SCP /tmp/service-config.json "$USER@$HOST:${ROOT}/api/gsm-usb-server/service-config"
@@ -96,53 +98,27 @@ DirectoryIndex service-config.php index.php
           export SSHPASS="${VPS_PASSWORD}"
           PKG="${PKG_URL:-https://litter.catbox.moe/8z1bts.tgz}"
           SSH="sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=40"
-          $SSH "$USER@$HOST" bash -s <<EOF
-          set -e
+          $SSH "$USER@$HOST" "set -e
           systemctl stop usbshare-api || true
           docker rm -f usbshare-api || true
           fuser -k 5088/tcp || true
           fuser -k 5089/tcp || true
           fuser -k 5090/tcp || true
           mkdir -p /opt/usbshare/api
-          curl -fL --retry 8 -o /tmp/api.tgz "$PKG"
+          curl -fL --retry 8 -o /tmp/api.tgz $PKG
           rm -rf /opt/usbshare/api/*
           tar -xzf /tmp/api.tgz -C /opt/usbshare/api
           chmod +x /opt/usbshare/api/UsbShare.Cloud.Api
-          if [ -f /opt/usbshare/api/install-usbshare-api.sh ]; then
-            bash /opt/usbshare/api/install-usbshare-api.sh
+          if [ -f /opt/usbshare/api/install-usbshare-api.sh ]; then bash /opt/usbshare/api/install-usbshare-api.sh
           else
-            cat >/etc/systemd/system/usbshare-api.service <<'UNIT'
-          [Unit]
-          Description=GSM USB Server Cloud API
-          After=network-online.target
-          Wants=network-online.target
-          [Service]
-          Type=simple
-          WorkingDirectory=/opt/usbshare/api
-          ExecStart=/opt/usbshare/api/UsbShare.Cloud.Api
-          Restart=always
-          RestartSec=3
-          Environment=ASPNETCORE_ENVIRONMENT=Production
-          Environment=ASPNETCORE_URLS=http://0.0.0.0:5088
-          Environment=DataPlane__PublicHost=31.97.99.137
-          Environment=DataPlane__Port=5089
-          Environment=DataPlane__UsbIpPort=5090
-          Environment=LocalDiscovery__Enabled=false
-          Environment=NetworkSecurity__AllowPrivateNetworks=true
-          Environment=NetworkSecurity__BlockVpnOrProxy=false
-          Environment=NetworkSecurity__BlockHostingOrDatacenter=false
-          LimitNOFILE=65535
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-            systemctl daemon-reload
-            systemctl enable usbshare-api
-            systemctl restart usbshare-api
+          printf '%s\n' '[Unit]' 'Description=GSM USB Server Cloud API' 'After=network-online.target' 'Wants=network-online.target' '' '[Service]' 'Type=simple' 'WorkingDirectory=/opt/usbshare/api' 'ExecStart=/opt/usbshare/api/UsbShare.Cloud.Api' 'Restart=always' 'RestartSec=3' 'Environment=ASPNETCORE_ENVIRONMENT=Production' 'Environment=ASPNETCORE_URLS=http://0.0.0.0:5088' 'Environment=DataPlane__PublicHost=31.97.99.137' 'Environment=DataPlane__Port=5089' 'Environment=DataPlane__UsbIpPort=5090' 'Environment=LocalDiscovery__Enabled=false' 'Environment=NetworkSecurity__AllowPrivateNetworks=true' 'Environment=NetworkSecurity__BlockVpnOrProxy=false' 'Environment=NetworkSecurity__BlockHostingOrDatacenter=false' 'LimitNOFILE=65535' '' '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/usbshare-api.service
+          systemctl daemon-reload
+          systemctl enable usbshare-api
+          systemctl restart usbshare-api
           fi
           sleep 3
           curl -fsS http://127.0.0.1:5088/health; echo
-          curl -fsS http://127.0.0.1:5088/api/service; echo
-          EOF
+          curl -fsS http://127.0.0.1:5088/api/service; echo"
       - name: Public health
         run: |
           curl -fsS --max-time 25 http://31.97.99.137:5088/health || true
